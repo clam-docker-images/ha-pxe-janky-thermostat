@@ -15,35 +15,70 @@ This project runs the original thermostat controller as a standard OCI container
 - [`Dockerfile.remote`](./Dockerfile.remote) is a self-contained Dockerfile for raw-URL builds with no local checkout.
 - [`compose.yaml`](./compose.yaml) is a sample standalone deployment that also works well for local developer builds.
 - [`config.json`](./config.json) is the sample mounted config file.
-- [`scripts/build-image.sh`](./scripts/build-image.sh) builds a local developer image with sensible defaults.
-- [`scripts/publish-image.sh`](./scripts/publish-image.sh) builds and pushes a normal multi-arch registry image.
+- [`Makefile`](./Makefile) provides the same `image-build` and `image-publish` targets used in `docker-rgpio`.
+- [`scripts/docker-image.sh`](./scripts/docker-image.sh) is the shared `build` / `publish` helper, matching the `docker-rgpio` project structure.
+- [`scripts/build-image.sh`](./scripts/build-image.sh) and [`scripts/publish-image.sh`](./scripts/publish-image.sh) remain as compatibility wrappers.
 
-## Developer build
+## Easy image build and publish
 
-Build the local runtime image:
+This repo now uses the same helper pattern as `docker-rgpio`: a single `scripts/docker-image.sh` entrypoint plus `make` targets.
+
+Default target platform:
+
+- `linux/arm64`
+
+Prerequisites:
+
+- Docker CLI installed
+- `buildx` available either as `docker buildx` or standalone `docker-buildx`
+- A working Docker daemon, or a Docker context that points at a reachable remote daemon
+- For cross-building from a non-ARM host, `buildx` emulation support available to Docker
+
+Build an arm64 image into your local Docker image store:
 
 ```bash
-scripts/build-image.sh
+make image-build
 ```
 
-Build with a custom tag:
+Publish an arm64 image to a registry:
+
+```bash
+make image-publish IMAGE_REPO=ghcr.io/your-org/janky-thermostat IMAGE_TAG=v0.1.0
+```
+
+Build and publish with the underlying helper directly:
+
+```bash
+sh scripts/docker-image.sh build
+sh scripts/docker-image.sh publish
+```
+
+Supported variables:
+
+- `IMAGE_REPO`: image repository/name, default `janky-thermostat`
+- `IMAGE_TAG`: image tag, default `latest`
+- `IMAGE_PLATFORM`: target platform, default `linux/arm64`
+- `BASE_IMAGE`: base image build arg, default `debian:trixie-slim`
+- `BUILDER_NAME`: override the `buildx` builder name if needed
+- `EXTRA_ARGS`: append raw extra flags to `docker buildx build`
+
+The compatibility wrappers still work:
 
 ```bash
 scripts/build-image.sh janky-thermostat:test
+scripts/publish-image.sh ghcr.io/your-org/janky-thermostat v0.1.0
 ```
 
-Build for a specific platform:
+If you prefer the raw Docker command, the equivalent local build is:
 
 ```bash
-PLATFORM=linux/arm64 scripts/build-image.sh janky-thermostat:arm64-dev
-```
-
-The script prefers `docker buildx build --load` when `buildx` is available and falls back to plain `docker build` on older developer installs.
-
-If you prefer the raw Docker command, the standard local build is still:
-
-```bash
-docker build --target runtime -t janky-thermostat:dev .
+docker buildx build \
+  --target runtime \
+  --platform linux/arm64 \
+  --build-arg BASE_IMAGE=debian:trixie-slim \
+  --tag janky-thermostat:latest \
+  --load \
+  .
 ```
 
 ## Run With Compose
@@ -52,7 +87,7 @@ docker build --target runtime -t janky-thermostat:dev .
 docker compose up --build -d
 ```
 
-The sample Compose file builds the `runtime` target from [`Dockerfile`](./Dockerfile), tags it as `janky-thermostat:dev` by default, and mounts [`config.json`](./config.json) to `/config/config.json`.
+The sample Compose file builds the `runtime` target from [`Dockerfile`](./Dockerfile), defaults the image tag to `janky-thermostat:latest`, accepts `BASE_IMAGE`, and mounts [`config.json`](./config.json) to `/config/config.json`.
 
 It also supports shell overrides for quick deployment:
 
@@ -60,25 +95,14 @@ It also supports shell overrides for quick deployment:
 MQTT_BROKER=broker.local \
 RGPIO_ADDR=rgpio.local \
 JANKY_CONFIG_PATH="$PWD/config.json" \
-JANKY_IMAGE=janky-thermostat:dev \
+JANKY_IMAGE=janky-thermostat:latest \
+BASE_IMAGE=debian:trixie-slim \
 docker compose up --build -d
 ```
 
 ## Publish
 
-Push a standard multi-arch image to a registry:
-
-```bash
-scripts/publish-image.sh ghcr.io/your-org/janky-thermostat v0.1.0
-```
-
-Also push `latest` during the same publish:
-
-```bash
-PUBLISH_LATEST=1 scripts/publish-image.sh ghcr.io/your-org/janky-thermostat v0.1.0
-```
-
-The publish script uses `docker buildx build --push` and defaults to `linux/amd64,linux/arm64`. Override `PLATFORMS` if you only want a subset.
+The publish helper uses `docker buildx build --push` and defaults to `linux/arm64`. Override `IMAGE_PLATFORM` if you need a different target.
 
 
 If you prefer the raw Docker command, the equivalent publish is:
@@ -86,7 +110,8 @@ If you prefer the raw Docker command, the equivalent publish is:
 ```bash
 docker buildx build \
   --target runtime \
-  --platform linux/amd64,linux/arm64 \
+  --platform linux/arm64 \
+  --build-arg BASE_IMAGE=debian:trixie-slim \
   --tag ghcr.io/your-org/janky-thermostat:v0.1.0 \
   --push \
   .
@@ -97,7 +122,13 @@ docker buildx build \
 ### Build directly from the GitHub repo URL
 
 ```bash
-docker build --target runtime -t janky-thermostat:dev https://github.com/Clam-/ha-pxe-janky-thermostat.git#main
+docker buildx build \
+  --target runtime \
+  --platform linux/arm64 \
+  --build-arg BASE_IMAGE=debian:trixie-slim \
+  --tag janky-thermostat:latest \
+  --load \
+  https://github.com/Clam-/ha-pxe-janky-thermostat.git#main
 ```
 
 This works because the repo has a root [`Dockerfile`](./Dockerfile) and the full Git repository can be used as the build context.
@@ -108,7 +139,7 @@ This works because the repo has a root [`Dockerfile`](./Dockerfile) and the full
 MQTT_BROKER=broker.local \
 RGPIO_ADDR=rgpio.local \
 JANKY_CONFIG_PATH="$PWD/config.json" \
-JANKY_IMAGE=janky-thermostat:dev \
+JANKY_IMAGE=janky-thermostat:latest \
 docker compose -f https://github.com/Clam-/ha-pxe-janky-thermostat.git#main:compose.yaml up -d
 ```
 
@@ -117,7 +148,12 @@ This uses the repo as the Compose source, so no local checkout is required. `JAN
 ### Build from a single raw Dockerfile URL
 
 ```bash
-docker build --target runtime -t janky-thermostat:dev \
+docker buildx build \
+  --target runtime \
+  --platform linux/arm64 \
+  --build-arg BASE_IMAGE=debian:trixie-slim \
+  --tag janky-thermostat:latest \
+  --load \
   https://raw.githubusercontent.com/Clam-/ha-pxe-janky-thermostat/main/Dockerfile.remote
 ```
 
@@ -126,7 +162,12 @@ docker build --target runtime -t janky-thermostat:dev \
 To build a specific branch, tag, or commit with the raw-file path:
 
 ```bash
-docker build --target runtime -t janky-thermostat:v0.2.1 \
+docker buildx build \
+  --target runtime \
+  --platform linux/arm64 \
+  --build-arg BASE_IMAGE=debian:trixie-slim \
+  --tag janky-thermostat:v0.2.1 \
+  --load \
   --build-arg REPO_REF=v0.2.1 \
   https://raw.githubusercontent.com/Clam-/ha-pxe-janky-thermostat/v0.2.1/Dockerfile.remote
 ```

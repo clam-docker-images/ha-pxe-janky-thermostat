@@ -1,4 +1,6 @@
-FROM debian:trixie-slim AS builder
+ARG BASE_IMAGE=debian:trixie-slim
+
+FROM ${BASE_IMAGE} AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -21,7 +23,7 @@ RUN set -eux; \
 
 COPY janky-thermostat/ /app/
 
-FROM debian:trixie-slim AS runtime
+FROM ${BASE_IMAGE} AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

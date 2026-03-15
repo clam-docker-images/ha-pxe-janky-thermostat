@@ -1,4 +1,6 @@
-FROM debian:trixie-slim AS builder
+ARG BASE_IMAGE=debian:trixie-slim
+
+FROM ${BASE_IMAGE} AS builder
 
 ARG REPO_URL=https://github.com/Clam-/ha-pxe-janky-thermostat.git
 ARG REPO_REF=main
@@ -23,7 +25,7 @@ RUN set -eux; \
     cp -R "/tmp/source/${APP_SUBDIR}/." /app/; \
     rm -rf /tmp/source /var/lib/apt/lists/*
 
-FROM debian:trixie-slim AS runtime
+FROM ${BASE_IMAGE} AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

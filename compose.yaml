@@ -1,10 +1,12 @@
 services:
   janky-thermostat:
-    image: ${JANKY_IMAGE:-janky-thermostat:dev}
+    image: ${JANKY_IMAGE:-janky-thermostat:latest}
     build:
       context: .
       dockerfile: Dockerfile
       target: runtime
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-debian:trixie-slim}
     container_name: janky-thermostat
     restart: unless-stopped
     volumes:
