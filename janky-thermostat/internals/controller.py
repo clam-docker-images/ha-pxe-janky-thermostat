@@ -1,26 +1,28 @@
+import logging
+import queue
 import time
 from typing import Optional
-import queue
-import logging
 
+from rgpio_sht4x import SHT4x
 from simple_pid import PID
-from pigpio_sht4x import SHT4x
 
-from mqtt import ClimateEntity, NumberEntity, MQTTClient, MQTTEntity
+from mqtt import ClimateEntity, MQTTClient, MQTTEntity, NumberEntity
 from .motor import MoveThread
 from .threadinghelpers import SHUTDOWN_EV
 
 _LOGGER = logging.getLogger(__name__)
 
+
 def adj_tunings(t, index, data):
-    t = list(t) # (Kp, Ki, Kd)
+    t = list(t)  # (Kp, Ki, Kd)
     t[index] = float(data)
     return t[0], t[1], t[2]
 
+
 class Controller:
-    def __init__(self, client:MQTTClient, options):
+    def __init__(self, client: MQTTClient, options):
         self.client = client
-        self.manualposition = client.register_entity(NumberEntity("manualposition", "Manual Position", min_value=0, max_value=30000, 
+        self.manualposition = client.register_entity(NumberEntity("manualposition", "Manual Position", min_value=0, max_value=30000,
                                                                 on_command=self.handle_set_position, value=0, unit="mm"))
         self.targetposition = client.register_entity(MQTTEntity("sensor", "targetposition", "Target Position", value=0, unit="mm"))
         self.actualposition = client.register_entity(MQTTEntity("sensor", "actualposition", "Actual Position", unit="mm"))
@@ -33,14 +35,18 @@ class Controller:
         self.desiredtemp = client.register_entity(MQTTEntity("sensor", "desiredtemp", "Desired Temp.", unit="°C", device_class="temperature"))
         self.actualtemp = client.register_entity(MQTTEntity("sensor", "actualtemperature", "Actual Temperature", unit="°C", device_class="temperature"))
         self.actualhumid = client.register_entity(MQTTEntity("sensor", "actualhumidity", "Actual Humidity", unit="%", device_class="humidity"))
-        self.climate = ClimateEntity("climate", "Climate", on_temp_command=self.handle_set_temp, on_mode_command=self.handle_set_mode, 
+        self.climate = ClimateEntity("climate", "Climate", on_temp_command=self.handle_set_temp, on_mode_command=self.handle_set_mode,
                                      min_temp=options.get("min_temp", 15.0), max_temp=options.get("max_temp", 30.0))
         client.register_entity(self.climate)
-        
+
         self.pid = PID(self.kp.getFloat(), self.ki.getFloat(), self.kd.getFloat(), setpoint=self.climate.getFloat(),
-                output_limits=(options["posmin"], options["posmax"]), 
+                output_limits=(options["posmin"], options["posmax"]),
                 auto_mode=True if self.climate.mode == "auto" or self.climate.mode == "heat" else False)
-        self.TEMP = SHT4x()
+        self.TEMP = SHT4x(
+            bus=options["i2c_bus"],
+            host=options["rgpio_addr"],
+            port=options["rgpio_port"],
+        )
         # PID extra options.
         self.pid.sample_time = options["updaterate"]  # set PID update rate UPDATE_RATE
         self.pid.proportional_on_measurement = False
@@ -59,7 +65,7 @@ class Controller:
         self.pid.setpoint = data
         self.climate.value = data
         self.desiredtemp.value = data
-    
+
     def handle_set_mode(self, data):
         #expect string, it should be one of "off", "heat", or "auto"
         self.mode = data
@@ -68,7 +74,7 @@ class Controller:
         else:
             self.pid.auto_mode = False
         self.climate.mode = data
-        
+
     def handle_set_position(self, data):
         #expect json parsed data
         if data > 0:
@@ -76,20 +82,20 @@ class Controller:
             self.mode = "off"
             self.targetposition.value = data
             self.motorq.put(["P", data])
-    
+
     # (Kp, Ki, Kd) expect json parsed data
     def handle_set_proportional(self, data):
         self.pid.tunings = adj_tunings(self.pid.tunings, 0, data)
         self.kp.value = data
-        
+
     def handle_set_integral(self, data):
         self.pid.tunings = adj_tunings(self.pid.tunings, 1, data)
         self.ki.value = data
-    
+
     def handle_set_derivative(self, data):
         self.pid.tunings = adj_tunings(self.pid.tunings, 2, data)
         self.kd.value = data
-    
+
     def fetchsched(self, currtimestamp: str) -> Optional[dict]:
         """
         Return the row whose 'timestamp' is the latest time <= currtimestamp.
@@ -129,10 +135,11 @@ class Controller:
                         while ev:
                             if ev[0] == "AP":
                                 apos = ev[1]
-                            size+=1
+                            size += 1
                             ev = self.controllerq.get_nowait()
                         print(f"q size: {size}")
-                    except queue.Empty: pass
+                    except queue.Empty:
+                        pass
                 currentupdate = time.monotonic()
                 currentschedcheck = time.monotonic()
                 # measure
@@ -141,20 +148,21 @@ class Controller:
                 humidity = round(humidity, 2)
                 # Do things...
                 newpos = self.pid(temp)
-                if newpos is not None: newpos = round(newpos)
+                if newpos is not None:
+                    newpos = round(newpos)
                 if self.mode != "off" and newpos is not None:
-                    self.targetposition.value = newpos # store new location
+                    self.targetposition.value = newpos  # store new location
                     # move to new setpoint
                     self.motorq.put(["P", newpos])
-                SHUTDOWN_EV.wait(max(0.5 - (currentupdate-lastupdate), 0)) # pause at most 0.5 secs; keeps PID timing drift bounded.
+                SHUTDOWN_EV.wait(max(0.5 - (currentupdate - lastupdate), 0))  # pause at most 0.5 secs; keeps PID timing drift bounded.
                 lastupdate = currentupdate
-                if (currentschedcheck - lastschedcheck > self.lograte):
+                if currentschedcheck - lastschedcheck > self.lograte:
                     # Log stats...
                     self.climate.current_temperature = temp
                     self.climate.current_humidity = humidity
                     self.actualtemp.value = temp
                     self.actualhumid.value = humidity
-                    if apos is not None: 
+                    if apos is not None:
                         self.actualposition.value = apos
                         apos = None
                     # log PID component values:
@@ -171,4 +179,8 @@ class Controller:
         finally:
             _LOGGER.info("Main thread waiting for worker to finish...")
             self.mover.join(timeout=5)
+            try:
+                self.TEMP.close()
+            except Exception:
+                _LOGGER.exception("Failed to close SHT4x")
             self.client.disconnect()

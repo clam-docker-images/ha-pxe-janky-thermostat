@@ -17,13 +17,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "posmin": 1034,
     "posmax": 24600,
     "posmargin": 50,
-    "speed": 500000,
+    "speed": 50.0,
     "lograte": 10,
     "updaterate": 15,
     "updir": 1,
     "i2c_bus": 0,
-    "pigpio_addr": "localhost",
-    "pigpio_port": 8888,
+    "rgpio_addr": "localhost",
+    "rgpio_port": 8889,
     "loglevel": "WARNING",
 }
 
@@ -56,8 +56,8 @@ ENV_OVERRIDES = {
     "updaterate": ("THERMOSTAT_UPDATERATE", int),
     "updir": ("THERMOSTAT_UPDIR", int),
     "i2c_bus": ("I2C_BUS", int),
-    "pigpio_addr": ("PIGPIO_ADDR", str),
-    "pigpio_port": ("PIGPIO_PORT", int),
+    "rgpio_addr": ("RGPIO_ADDR", str),
+    "rgpio_port": ("RGPIO_PORT", int),
     "loglevel": ("THERMOSTAT_LOGLEVEL", str),
 }
 
@@ -97,13 +97,13 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized["posmin"] = float(normalized["posmin"])
     normalized["posmax"] = float(normalized["posmax"])
     normalized["posmargin"] = float(normalized["posmargin"])
-    normalized["speed"] = float(normalized["speed"])
+    normalized["speed"] = _normalize_speed(normalized["speed"])
     normalized["lograte"] = int(normalized["lograte"])
     normalized["updaterate"] = int(normalized["updaterate"])
     normalized["updir"] = int(normalized["updir"])
     normalized["i2c_bus"] = int(normalized["i2c_bus"])
-    normalized["pigpio_addr"] = str(normalized["pigpio_addr"]).strip()
-    normalized["pigpio_port"] = int(normalized["pigpio_port"])
+    normalized["rgpio_addr"] = str(normalized["rgpio_addr"]).strip()
+    normalized["rgpio_port"] = int(normalized["rgpio_port"])
     normalized["loglevel"] = str(normalized["loglevel"]).upper().strip()
     normalized["schedule"] = _normalize_schedule(normalized.get("schedule", []))
 
@@ -113,14 +113,17 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     if not normalized["mqtt_broker"]:
         raise ValueError("mqtt_broker cannot be empty")
 
-    if not normalized["pigpio_addr"]:
-        raise ValueError("pigpio_addr cannot be empty")
+    if not normalized["rgpio_addr"]:
+        raise ValueError("rgpio_addr cannot be empty")
 
     if normalized["mqtt_port"] < 1:
         raise ValueError("mqtt_port must be at least 1")
 
-    if normalized["pigpio_port"] < 1:
-        raise ValueError("pigpio_port must be at least 1")
+    if normalized["rgpio_port"] < 1:
+        raise ValueError("rgpio_port must be at least 1")
+
+    if normalized["speed"] > 100:
+        raise ValueError("speed must not exceed 100")
 
     if normalized["lograte"] < 1:
         raise ValueError("lograte must be at least 1")
@@ -136,14 +139,23 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
 
 def apply_runtime_environment(config: dict[str, Any]) -> None:
     os.environ["I2C_BUS"] = str(config["i2c_bus"])
-    os.environ["PIGPIO_ADDR"] = str(config["pigpio_addr"])
-    os.environ["PIGPIO_PORT"] = str(config["pigpio_port"])
+    os.environ["RGPIO_ADDR"] = str(config["rgpio_addr"])
+    os.environ["RGPIO_PORT"] = str(config["rgpio_port"])
 
 
 def _normalize_optional_string(value: Any) -> Optional[str]:
     if value is None:
         return None
     return _parse_optional_str(str(value))
+
+
+def _normalize_speed(value: Any) -> float:
+    speed = float(value)
+    if speed < 0:
+        raise ValueError("speed must be non-negative")
+    if speed > 1000:
+        speed /= 10000.0
+    return speed
 
 
 def _normalize_schedule(schedule: Any) -> list[dict[str, Any]]:

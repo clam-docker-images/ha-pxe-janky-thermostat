@@ -1,6 +1,6 @@
 simple-pid
-dual-mc33926 @ git+https://github.com/Clam-/dual-mc33926@main
-pigpio-ads1115 @ git+https://github.com/Clam-/pigpio-ads1115@main
-pigpio-sht4x @ git+https://github.com/Clam-/pigpio-sht4x@main
+dual-mc33926 @ git+https://github.com/Clam-/rgpio-dual-mc33926@main
+rgpio-ads1115 @ git+https://github.com/Clam-/rgpio-ads1115@main
+rgpio-sht4x @ git+https://github.com/Clam-/rgpio-sht4x@main
 paho-mqtt
-pigpio
+rgpio

@@ -1,0 +1,93 @@
+# Example ha-docker-pxe-deploy config for running this thermostat with docker-rgpio.
+# Replace the serial, SSH key, hostname, and MQTT broker hostname/IP to match your environment.
+# Add more /dev/gpiochip* entries if your Raspberry Pi exposes additional gpiochips.
+
+log_level: info
+server_ip: 192.168.25.250
+default_username: pi
+default_password: ""
+default_timezone: Australia/Melbourne
+default_keyboard_layout: us
+default_locale: en_AU.UTF-8
+ssh_authorized_keys: |
+  ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE6A4C2WQY0gVxk7bP5fA8Bf4m3jX9pW5rP8YqL3m7wN lee@example-macbook
+clients:
+  - serial: "cdc843d7"
+    model: pi4
+    hostname: janky
+    image_arch: auto
+    rebuild: false
+    containers: |
+      [
+        {
+          "name": "rgpiod",
+          "image": "local/rgpiod:latest",
+          "source": {
+            "type": "git",
+            "url": "https://github.com/Clam-/docker-rgpio.git",
+            "ref": "main",
+            "context": ".",
+            "dockerfile": "Dockerfile"
+          },
+          "env": {
+            "RGPIOD_PORT": "8889",
+            "RGPIOD_LOCAL_ONLY": "0"
+          },
+          "ports": [
+            "8889:8889"
+          ],
+          "devices": [
+            "/dev/gpiochip0:/dev/gpiochip0"
+          ]
+        },
+        {
+          "name": "janky-thermostat",
+          "image": "local/janky-thermostat:latest",
+          "source": {
+            "type": "git",
+            "url": "https://github.com/Clam-/ha-pxe-janky-thermostat.git",
+            "ref": "main",
+            "context": ".",
+            "dockerfile": "Dockerfile"
+          },
+          "depends_on": [
+            "rgpiod"
+          ],
+          "env": {
+            "MQTT_BROKER": "mqtt.home.example",
+            "MQTT_PORT": "1883",
+            "RGPIO_ADDR": "host.docker.internal",
+            "RGPIO_PORT": "8889",
+            "I2C_BUS": "0"
+          },
+          "extra_hosts": [
+            "host.docker.internal:host-gateway"
+          ],
+          "files": [
+            {
+              "container_path": "/config/config.json",
+              "format": "json",
+              "content": {
+                "mqtt_broker": "mqtt.home.example",
+                "mqtt_port": 1883,
+                "mqtt_username": null,
+                "mqtt_password": null,
+                "schedule": ["06:00 21.0", "22:30 18.0"],
+                "min_temp": 20.0,
+                "max_temp": 28.0,
+                "posmin": 1034,
+                "posmax": 24600,
+                "posmargin": 50,
+                "speed": 50.0,
+                "lograte": 10,
+                "updaterate": 15,
+                "updir": 1,
+                "i2c_bus": 0,
+                "rgpio_addr": "host.docker.internal",
+                "rgpio_port": 8889,
+                "loglevel": "WARNING"
+              }
+            }
+          ]
+        }
+      ]

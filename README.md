@@ -1,12 +1,12 @@
 # Janky Thermostat
 
-This project runs the original thermostat controller as a standard OCI container on plain Docker. The Home Assistant add-on wrapper is gone, but the application behavior is the same: it still reads the SHT4x sensor over pigpio, drives the motor through the MC33926 stack, and publishes Home Assistant MQTT discovery entities.
+This project runs the original thermostat controller as a standard OCI container on plain Docker. The Home Assistant add-on wrapper is gone, but the application behavior is the same: it now reads the SHT4x sensor over `rgpio`, drives the motor through the MC33926 stack, and publishes Home Assistant MQTT discovery entities.
 
 ## Runtime model
 
 - The container starts with `python /app/main.py`.
 - Runtime settings come from a JSON file mounted at `/config/config.json` by default.
-- Standard environment variables can override MQTT, pigpio, I2C, and thermostat settings.
+- Standard environment variables can override MQTT, `rgpio`, I2C, and thermostat settings.
 - No Supervisor, `bashio`, `with-contenv`, or `/data/options.json` is used.
 
 ## Files
@@ -28,13 +28,13 @@ docker build -t janky-thermostat .
 docker compose up --build -d
 ```
 
-The sample Compose file mounts [`config.json`](./config.json) to `/config/config.json` and overrides the MQTT and pigpio connection endpoints with environment variables.
+The sample Compose file mounts [`config.json`](./config.json) to `/config/config.json` and overrides the MQTT and `rgpio` connection endpoints with environment variables.
 
 It also supports shell overrides for quick deployment:
 
 ```bash
 MQTT_BROKER=broker.local \
-PIGPIO_ADDR=pigpio.local \
+RGPIO_ADDR=rgpio.local \
 JANKY_CONFIG_PATH="$PWD/config.json" \
 docker compose up --build -d
 ```
@@ -53,7 +53,7 @@ This works because the repo has a root [`Dockerfile`](./Dockerfile) and the full
 
 ```bash
 MQTT_BROKER=broker.local \
-PIGPIO_ADDR=pigpio.local \
+RGPIO_ADDR=rgpio.local \
 JANKY_CONFIG_PATH="$PWD/config.json" \
 docker compose -f https://github.com/Clam-/ha-pxe-janky-thermostat.git#main:compose.yaml up -d
 ```
@@ -86,15 +86,15 @@ docker run -d \
   -v "$(pwd)/config.json:/config/config.json:ro" \
   -e MQTT_BROKER=mosquitto \
   -e MQTT_PORT=1883 \
-  -e PIGPIO_ADDR=pigpio \
-  -e PIGPIO_PORT=8888 \
+  -e RGPIO_ADDR=rgpio \
+  -e RGPIO_PORT=8889 \
   -e I2C_BUS=0 \
   janky-thermostat
 ```
 
 ## Configuration
 
-The JSON file uses the same core thermostat settings as the add-on, with MQTT and pigpio moved into normal runtime config:
+The JSON file uses the same core thermostat settings as the add-on, with MQTT and `rgpio` moved into normal runtime config:
 
 ```json
 {
@@ -108,13 +108,13 @@ The JSON file uses the same core thermostat settings as the add-on, with MQTT an
   "posmin": 1034,
   "posmax": 24600,
   "posmargin": 50,
-  "speed": 500000,
+  "speed": 50.0,
   "lograte": 10,
   "updaterate": 15,
   "updir": 1,
   "i2c_bus": 0,
-  "pigpio_addr": "pigpio",
-  "pigpio_port": 8888,
+  "rgpio_addr": "rgpio",
+  "rgpio_port": 8889,
   "loglevel": "WARNING"
 }
 ```
@@ -126,12 +126,12 @@ The JSON file uses the same core thermostat settings as the add-on, with MQTT an
 - `min_temp`, `max_temp`: Climate entity temperature limits.
 - `posmin`, `posmax`: PID output range for the actuator position.
 - `posmargin`: Acceptable actuator deadband before movement stops.
-- `speed`: Motor speed passed to the motor driver.
+- `speed`: Motor speed percentage passed to the motor driver.
 - `lograte`: Seconds between publish/log updates and schedule checks.
 - `updaterate`: PID sample time in seconds.
 - `updir`: Motor direction, must be `1` or `-1`.
-- `i2c_bus`: I2C bus passed through to the pigpio-backed sensor libraries.
-- `pigpio_addr`, `pigpio_port`: pigpio daemon endpoint.
+- `i2c_bus`: I2C bus passed through to the `rgpio`-backed sensor libraries.
+- `rgpio_addr`, `rgpio_port`: `rgpiod` daemon endpoint.
 - `loglevel`: One of `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`.
 
 ### Environment overrides
@@ -140,7 +140,7 @@ These override the JSON file when set:
 
 - `JANKY_CONFIG_FILE`: Alternate config file path inside the container.
 - `MQTT_BROKER`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`
-- `PIGPIO_ADDR`, `PIGPIO_PORT`, `I2C_BUS`
+- `RGPIO_ADDR`, `RGPIO_PORT`, `I2C_BUS`
 - `THERMOSTAT_SCHEDULE`: JSON array of schedule strings.
 - `THERMOSTAT_MIN_TEMP`, `THERMOSTAT_MAX_TEMP`
 - `THERMOSTAT_POSMIN`, `THERMOSTAT_POSMAX`, `THERMOSTAT_POSMARGIN`
@@ -151,5 +151,5 @@ These override the JSON file when set:
 ## Operational notes
 
 - The container expects an already-running MQTT broker.
-- The container expects a reachable `pigpiod` instance for GPIO/I2C access.
+- The container expects a reachable `rgpiod` instance for GPIO/I2C access.
 - MQTT discovery is still published under `homeassistant/...`, so Home Assistant can discover the entities without the add-on framework.
