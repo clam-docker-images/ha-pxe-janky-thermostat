@@ -21,14 +21,7 @@ clients:
       [
         {
           "name": "rgpiod",
-          "image": "local/rgpiod:latest",
-          "source": {
-            "type": "git",
-            "url": "https://github.com/Clam-/docker-rgpio.git",
-            "ref": "main",
-            "context": ".",
-            "dockerfile": "Dockerfile"
-          },
+          "image": "ghcr.io/clam-docker-images/docker-rgpio:latest",
           "env": {
             "RGPIOD_PORT": "8889",
             "RGPIOD_LOCAL_ONLY": "0"
@@ -47,8 +40,6 @@ clients:
             "rgpiod"
           ],
           "env": {
-            "MQTT_BROKER": "mqtt.home.example",
-            "MQTT_PORT": "1883",
             "RGPIO_ADDR": "host.docker.internal",
             "RGPIO_PORT": "8889",
             "I2C_BUS": "0"
@@ -61,10 +52,6 @@ clients:
               "container_path": "/config/config.json",
               "format": "json",
               "content": {
-                "mqtt_broker": "mqtt.home.example",
-                "mqtt_port": 1883,
-                "mqtt_username": null,
-                "mqtt_password": null,
                 "schedule": ["06:00 21.0", "22:30 18.0"],
                 "min_temp": 20.0,
                 "max_temp": 28.0,
