@@ -5,8 +5,7 @@ This project runs the original thermostat controller as a standard OCI container
 ## Runtime model
 
 - The container starts with `python /app/main.py`.
-- Runtime settings come from a JSON file mounted at `/config/config.json` by default.
-- Standard environment variables can override MQTT, `rgpio`, I2C, and thermostat settings.
+- Runtime settings come from the JSON file mounted at `/config/config.json`.
 - No Supervisor, `bashio`, `with-contenv`, or `/data/options.json` is used.
 
 ## Files
@@ -89,11 +88,11 @@ docker compose up --build -d
 
 The sample Compose file builds the `runtime` target from [`Dockerfile`](./Dockerfile), defaults the image tag to `janky-thermostat:latest`, accepts `BASE_IMAGE`, and mounts [`config.json`](./config.json) to `/config/config.json`.
 
-It also supports shell overrides for quick deployment:
+Attach the container to the same user-defined or external Docker networks as the MQTT broker and `rgpiod`, then set `mqtt_broker` and `rgpio_addr` in `config.json` to the corresponding service or container DNS names on those networks. No host-network access or `host-gateway` aliasing is required.
+
+You can still override the image tag, base image, or mounted config path at Compose invocation time if needed:
 
 ```bash
-MQTT_BROKER=broker.local \
-RGPIO_ADDR=rgpio.local \
 JANKY_CONFIG_PATH="$PWD/config.json" \
 JANKY_IMAGE=janky-thermostat:latest \
 BASE_IMAGE=debian:trixie-slim \
@@ -136,8 +135,6 @@ This works because the repo has a root [`Dockerfile`](./Dockerfile) and the full
 ### Run Compose directly from the GitHub repo URL
 
 ```bash
-MQTT_BROKER=broker.local \
-RGPIO_ADDR=rgpio.local \
 JANKY_CONFIG_PATH="$PWD/config.json" \
 JANKY_IMAGE=janky-thermostat:latest \
 docker compose -f https://github.com/Clam-/ha-pxe-janky-thermostat.git#main:compose.yaml up -d
@@ -179,11 +176,6 @@ docker run -d \
   --name janky-thermostat \
   --restart unless-stopped \
   -v "$(pwd)/config.json:/config/config.json:ro" \
-  -e MQTT_BROKER=mosquitto \
-  -e MQTT_PORT=1883 \
-  -e RGPIO_ADDR=rgpio \
-  -e RGPIO_PORT=8889 \
-  -e I2C_BUS=0 \
   janky-thermostat
 ```
 
@@ -229,22 +221,9 @@ The JSON file uses the same core thermostat settings as the add-on, with MQTT an
 - `rgpio_addr`, `rgpio_port`: `rgpiod` daemon endpoint.
 - `loglevel`: One of `CRITICAL`, `ERROR`, `WARNING`, `INFO`, `DEBUG`.
 
-### Environment overrides
-
-These override the JSON file when set:
-
-- `JANKY_CONFIG_FILE`: Alternate config file path inside the container.
-- `MQTT_BROKER`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`
-- `RGPIO_ADDR`, `RGPIO_PORT`, `I2C_BUS`
-- `THERMOSTAT_SCHEDULE`: JSON array of schedule strings.
-- `THERMOSTAT_MIN_TEMP`, `THERMOSTAT_MAX_TEMP`
-- `THERMOSTAT_POSMIN`, `THERMOSTAT_POSMAX`, `THERMOSTAT_POSMARGIN`
-- `THERMOSTAT_SPEED`, `THERMOSTAT_LOGRATE`, `THERMOSTAT_UPDATERATE`
-- `THERMOSTAT_UPDIR`
-- `THERMOSTAT_LOGLEVEL`
-
 ## Operational notes
 
 - The container expects an already-running MQTT broker.
 - The container expects a reachable `rgpiod` instance for GPIO/I2C access.
+- When running `rgpiod` in a container, pass through the GPIO and I2C device nodes it needs, typically `/dev/gpiochip0`, `/dev/i2c-1`, and `/dev/i2c-2`.
 - MQTT discovery is still published under `homeassistant/...`, so Home Assistant can discover the entities without the add-on framework.

@@ -11,11 +11,3 @@ services:
     restart: unless-stopped
     volumes:
       - ${JANKY_CONFIG_PATH:-./config.json}:/config/config.json:ro
-    environment:
-      MQTT_BROKER: ${MQTT_BROKER:-mosquitto}
-      MQTT_PORT: ${MQTT_PORT:-1883}
-      MQTT_USERNAME: ${MQTT_USERNAME:-}
-      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
-      RGPIO_ADDR: ${RGPIO_ADDR:-rgpio}
-      RGPIO_PORT: ${RGPIO_PORT:-8889}
-      I2C_BUS: ${I2C_BUS:-0}

@@ -4,8 +4,7 @@ FROM ${BASE_IMAGE} AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    JANKY_CONFIG_FILE=/config/config.json
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
@@ -28,7 +27,6 @@ FROM ${BASE_IMAGE} AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    JANKY_CONFIG_FILE=/config/config.json \
     PATH=/opt/venv/bin:${PATH}
 
 WORKDIR /app

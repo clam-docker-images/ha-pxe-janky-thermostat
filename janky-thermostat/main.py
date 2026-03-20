@@ -1,26 +1,13 @@
-import argparse
 import logging
-import os
 import signal
 import sys
 
-from runtime_config import DEFAULT_CONFIG_PATH, apply_runtime_environment, load_runtime_config
+from runtime_config import load_runtime_config
 
 
 class StdoutFilter(logging.Filter):
     def filter(self, record):
         return record.levelno < logging.WARNING
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run the janky thermostat controller as a standard OCI container."
-    )
-    parser.add_argument(
-        "--config",
-        help=f"Path to the JSON config file. Defaults to {DEFAULT_CONFIG_PATH} or JANKY_CONFIG_FILE.",
-    )
-    return parser.parse_args()
 
 
 def configure_logging(loglevel: str) -> None:
@@ -42,13 +29,9 @@ def configure_logging(loglevel: str) -> None:
 
 
 def main() -> int:
-    args = parse_args()
-    config_path = args.config or os.getenv("JANKY_CONFIG_FILE", DEFAULT_CONFIG_PATH)
-    config_required = bool(args.config) or "JANKY_CONFIG_FILE" in os.environ
-    options = load_runtime_config(config_path, config_required=config_required)
+    options = load_runtime_config()
 
     configure_logging(options["loglevel"])
-    apply_runtime_environment(options)
 
     from mqtt.client import MQTTClient
     from internals.threadinghelpers import handle_shutdown

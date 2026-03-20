@@ -1,6 +1,7 @@
 # Example ha-docker-pxe-deploy config for running this thermostat with docker-rgpio.
 # Replace the serial, SSH key, hostname, and MQTT broker hostname/IP to match your environment.
 # Add more /dev/gpiochip* entries if your Raspberry Pi exposes additional gpiochips.
+# Add or remove /dev/i2c-* entries to match the I2C buses exposed on your host.
 
 log_level: info
 server_ip: 
@@ -30,7 +31,9 @@ clients:
             "8889:8889"
           ],
           "devices": [
-            "/dev/gpiochip0:/dev/gpiochip0"
+            "/dev/gpiochip0:/dev/gpiochip0",
+            "/dev/i2c-1:/dev/i2c-1",
+            "/dev/i2c-2:/dev/i2c-2"
           ]
         },
         {
@@ -38,14 +41,6 @@ clients:
           "image": "ghcr.io/clam-docker-images/janky-thermostat:latest",
           "depends_on": [
             "rgpiod"
-          ],
-          "env": {
-            "RGPIO_ADDR": "host.docker.internal",
-            "RGPIO_PORT": "8889",
-            "I2C_BUS": "0"
-          },
-          "extra_hosts": [
-            "host.docker.internal:host-gateway"
           ],
           "files": [
             {
@@ -63,7 +58,7 @@ clients:
                 "updaterate": 15,
                 "updir": 1,
                 "i2c_bus": 0,
-                "rgpio_addr": "host.docker.internal",
+                "rgpio_addr": "rgpiod",
                 "rgpio_port": 8889,
                 "loglevel": "WARNING"
               }

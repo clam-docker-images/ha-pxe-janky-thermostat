@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -33,57 +32,19 @@ def _parse_optional_str(value: str) -> Optional[str]:
     return value or None
 
 
-def _parse_schedule(value: str) -> list[str]:
-    parsed = json.loads(value)
-    if not isinstance(parsed, list) or not all(isinstance(entry, str) for entry in parsed):
-        raise ValueError("THERMOSTAT_SCHEDULE must be a JSON array of strings")
-    return parsed
-
-
-ENV_OVERRIDES = {
-    "mqtt_broker": ("MQTT_BROKER", str),
-    "mqtt_port": ("MQTT_PORT", int),
-    "mqtt_username": ("MQTT_USERNAME", _parse_optional_str),
-    "mqtt_password": ("MQTT_PASSWORD", _parse_optional_str),
-    "schedule": ("THERMOSTAT_SCHEDULE", _parse_schedule),
-    "min_temp": ("THERMOSTAT_MIN_TEMP", float),
-    "max_temp": ("THERMOSTAT_MAX_TEMP", float),
-    "posmin": ("THERMOSTAT_POSMIN", float),
-    "posmax": ("THERMOSTAT_POSMAX", float),
-    "posmargin": ("THERMOSTAT_POSMARGIN", float),
-    "speed": ("THERMOSTAT_SPEED", float),
-    "lograte": ("THERMOSTAT_LOGRATE", int),
-    "updaterate": ("THERMOSTAT_UPDATERATE", int),
-    "updir": ("THERMOSTAT_UPDIR", int),
-    "i2c_bus": ("I2C_BUS", int),
-    "rgpio_addr": ("RGPIO_ADDR", str),
-    "rgpio_port": ("RGPIO_PORT", int),
-    "loglevel": ("THERMOSTAT_LOGLEVEL", str),
-}
-
-
-def load_runtime_config(config_path: str, config_required: bool = False) -> dict[str, Any]:
+def load_runtime_config(config_path: str = DEFAULT_CONFIG_PATH) -> dict[str, Any]:
     config: dict[str, Any] = dict(DEFAULT_CONFIG)
     path = Path(config_path)
-    if path.exists():
-        with path.open("r", encoding="utf-8") as handle:
-            file_config = json.load(handle)
-        if not isinstance(file_config, dict):
-            raise ValueError(f"Config file must contain a JSON object: {path}")
-        config.update(file_config)
-    elif config_required:
+    if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
 
-    apply_env_overrides(config)
+    with path.open("r", encoding="utf-8") as handle:
+        file_config = json.load(handle)
+    if not isinstance(file_config, dict):
+        raise ValueError(f"Config file must contain a JSON object: {path}")
+    config.update(file_config)
+
     return normalize_config(config)
-
-
-def apply_env_overrides(config: dict[str, Any]) -> None:
-    for key, (env_name, parser) in ENV_OVERRIDES.items():
-        raw_value = os.getenv(env_name)
-        if raw_value is None:
-            continue
-        config[key] = parser(raw_value)
 
 
 def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -135,12 +96,6 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("loglevel must be one of CRITICAL, ERROR, WARNING, INFO, DEBUG")
 
     return normalized
-
-
-def apply_runtime_environment(config: dict[str, Any]) -> None:
-    os.environ["I2C_BUS"] = str(config["i2c_bus"])
-    os.environ["RGPIO_ADDR"] = str(config["rgpio_addr"])
-    os.environ["RGPIO_PORT"] = str(config["rgpio_port"])
 
 
 def _normalize_optional_string(value: Any) -> Optional[str]:
