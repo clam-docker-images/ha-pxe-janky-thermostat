@@ -48,9 +48,17 @@ class MoveThread(threading.Thread):
             host=self.settings["rgpio_addr"],
             port=self.settings["rgpio_port"],
         )
-        self.UP = self.settings["updir"]
-        self.DOWN = self.UP * -1
+        self._refresh_direction_settings()
         self.STOP = 0
+
+    def _refresh_direction_settings(self):
+        self.UP = int(self.settings["updir"])
+        self.DOWN = self.UP * -1
+
+    def _command_motor(self, direction):
+        signed_speed = float(direction) * float(self.settings["speed"])
+        self.motors.motor2.set_speed(signed_speed)
+        self.moving = direction
 
     def run(self):
         try:
@@ -66,7 +74,8 @@ class MoveThread(threading.Thread):
                         if packet[0] == "P":
                             self.target = packet[1]
                         elif packet[0] == "S":
-                            self.settings = packet[1]
+                            self.settings = copy.deepcopy(packet[1])
+                            self._refresh_direction_settings()
                     except queue.Empty:
                         pass
                     if self.target == -2:
@@ -95,15 +104,13 @@ class MoveThread(threading.Thread):
                     if (self.moving == self.UP or self.moving == self.STOP) and pos < self.target - self.settings["posmargin"]:
                         if self.moving == self.STOP and time.monotonic() - lastmove > 2:
                             if self.moving != self.UP:
-                                self.motors.motor2.set_speed(self.UP * self.settings["speed"])
-                            self.moving = self.UP
+                                self._command_motor(self.UP)
                         if self.moving == self.DOWN:
                             lastmove = time.monotonic()
                     elif (self.moving == self.DOWN or self.moving == self.STOP) and pos > self.target + self.settings["posmargin"]:
                         if self.moving == self.STOP and time.monotonic() - lastmove > 2:
                             if self.moving != self.DOWN:
-                                self.motors.motor2.set_speed(self.DOWN * self.settings["speed"])
-                            self.moving = self.DOWN
+                                self._command_motor(self.DOWN)
                         if self.moving == self.DOWN:
                             lastmove = time.monotonic()
                     else:  # also stop
