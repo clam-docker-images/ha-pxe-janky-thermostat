@@ -14,6 +14,7 @@ class NumberEntity(MQTTEntity):
         value: float = 0.0,
         step: float = 1.0,
         unit: Optional[str] = None,
+        entity_category: Optional[str] = None,
         retain: bool = True,
         on_command: Callable[[float], None]
     ):
@@ -23,6 +24,7 @@ class NumberEntity(MQTTEntity):
             name=name,
             value=value,
             unit=unit,
+            entity_category=entity_category,
             retain=retain,
             on_command=on_command
         )

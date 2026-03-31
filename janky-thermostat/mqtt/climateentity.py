@@ -61,7 +61,7 @@ class ClimateEntity(MQTTEntity):
             )
             def _publish_if_no_retained():
                 self._init_mode_timer = None
-                payload = json.dumps(self._value) if not isinstance(self._value, str) else self._value
+                payload = self._mode or "off"
                 client.publish(self.mode_state_topic, payload=payload, qos=0, retain=self.retain)
                 _LOGGER.debug("Fallback publish default to %s (%s)", self.mode_state_topic, payload)
             self._init_mode_timer = threading.Timer(10.0, _publish_if_no_retained)

@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from internals.schedule import normalize_schedule
+
 
 DEFAULT_CONFIG_PATH = "/config/config.json"
 
@@ -12,6 +14,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "mqtt_username": None,
     "mqtt_password": None,
     "schedule": [],
+    "schedule_slots": 6,
     "min_temp": 20.0,
     "max_temp": 28.0,
     "posmin": 1034,
@@ -88,6 +91,7 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized["rgpio_port"] = int(normalized["rgpio_port"])
     normalized["loglevel"] = str(normalized["loglevel"]).upper().strip()
     normalized["schedule"] = _normalize_schedule(normalized.get("schedule", []))
+    normalized["schedule_slots"] = int(normalized["schedule_slots"])
 
     if normalized["updir"] not in (-1, 1):
         raise ValueError("updir must be either 1 or -1")
@@ -106,6 +110,9 @@ def normalize_config(config: dict[str, Any]) -> dict[str, Any]:
 
     if normalized["speed"] > 100:
         raise ValueError("speed must not exceed 100")
+
+    if normalized["schedule_slots"] < 1:
+        raise ValueError("schedule_slots must be at least 1")
 
     if normalized["lograte"] < 1:
         raise ValueError("lograte must be at least 1")
@@ -135,26 +142,4 @@ def _normalize_speed(value: Any) -> float:
 
 
 def _normalize_schedule(schedule: Any) -> list[dict[str, Any]]:
-    if not isinstance(schedule, list):
-        raise ValueError("schedule must be a list of strings")
-
-    normalized_schedule: list[dict[str, Any]] = []
-    for row in schedule:
-        if not isinstance(row, str):
-            raise ValueError("schedule entries must be strings")
-        row = row.strip()
-        if not row:
-            continue
-        parts = row.split(maxsplit=1)
-        if len(parts) != 2:
-            raise ValueError(f"Invalid schedule entry: {row!r}")
-        timestamp, temp = parts
-        normalized_schedule.append(
-            {
-                "timestamp": timestamp.strip()[0:5],
-                "temp": float(temp.lower().replace("c", "")),
-            }
-        )
-
-    normalized_schedule.sort(key=lambda entry: entry["timestamp"])
-    return normalized_schedule
+    return normalize_schedule(schedule)

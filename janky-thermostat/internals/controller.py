@@ -6,8 +6,13 @@ from typing import Optional
 from rgpio_sht4x import SHT4x
 from simple_pid import PID
 
-from mqtt import ClimateEntity, MQTTClient, MQTTEntity, NumberEntity
+from mqtt import ClimateEntity, MQTTClient, MQTTEntity, NumberEntity, TextEntity
 from .motor import MoveThread
+from .schedule import (
+    format_schedule_row,
+    normalize_schedule_timestamp,
+    summarize_schedule,
+)
 from .threadinghelpers import SHUTDOWN_EV
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,6 +43,8 @@ class Controller:
         self.climate = ClimateEntity("climate", "Climate", on_temp_command=self.handle_set_temp, on_mode_command=self.handle_set_mode,
                                      min_temp=options.get("min_temp", 15.0), max_temp=options.get("max_temp", 30.0))
         client.register_entity(self.climate)
+        self.schedulesummary = client.register_entity(MQTTEntity("sensor", "schedulesummary", "Schedule Summary", value="empty"))
+        self.currentschedule = client.register_entity(MQTTEntity("sensor", "currentschedule", "Current Schedule", value="none"))
 
         self.pid = PID(self.kp.getFloat(), self.ki.getFloat(), self.kd.getFloat(), setpoint=self.climate.getFloat(),
                 output_limits=(options["posmin"], options["posmax"]),
@@ -55,10 +62,47 @@ class Controller:
         self.controllerq = queue.Queue()
         self.mover = MoveThread(self.motorq, self.controllerq, options)
         self.mover.start()
-        self.schedule = options["schedule"]
+        self.schedule = []
+        self.schedule_slots: list[dict[str, object]] = []
+        self._build_schedule_slots(options)
         self.lograte = options["lograte"]
         self.currentsched = ""
         self.mode: str = "off"
+        self._rebuild_schedule()
+
+    def _build_schedule_slots(self, options) -> None:
+        default_temp = float(options.get("min_temp", 15.0))
+        for index in range(options.get("schedule_slots", 6)):
+            slot_index = index + 1
+            initial = options["schedule"][index] if index < len(options["schedule"]) else None
+            time_value = initial["timestamp"] if initial else ""
+            temp_value = initial["temp"] if initial else default_temp
+            time_entity = self.client.register_entity(
+                TextEntity(
+                    f"schedule_slot_{slot_index}_time",
+                    f"Schedule Slot {slot_index} Time",
+                    value=time_value,
+                    min_length=0,
+                    max_length=5,
+                    pattern=r"^$|^([01]\d|2[0-3]):[0-5]\d$",
+                    entity_category="config",
+                    on_command=lambda data, idx=index: self.handle_set_schedule_time(idx, data),
+                )
+            )
+            temp_entity = self.client.register_entity(
+                NumberEntity(
+                    f"schedule_slot_{slot_index}_temp",
+                    f"Schedule Slot {slot_index} Temp",
+                    min_value=options.get("min_temp", 15.0),
+                    max_value=options.get("max_temp", 30.0),
+                    step=0.1,
+                    value=temp_value,
+                    unit="°C",
+                    entity_category="config",
+                    on_command=lambda data, idx=index: self.handle_set_schedule_temp(idx, data),
+                )
+            )
+            self.schedule_slots.append({"time": time_entity, "temp": temp_entity})
 
     def handle_set_temp(self, data):
         #expect json parsed data
@@ -74,6 +118,8 @@ class Controller:
         else:
             self.pid.auto_mode = False
         self.climate.mode = data
+        if self.mode == "auto":
+            self.checkSetSchedule(force=True)
 
     def handle_set_position(self, data):
         #expect json parsed data
@@ -96,6 +142,61 @@ class Controller:
         self.pid.tunings = adj_tunings(self.pid.tunings, 2, data)
         self.kd.value = data
 
+    def handle_set_schedule_time(self, slot_index: int, data) -> None:
+        slot = self.schedule_slots[slot_index]
+        try:
+            normalized = normalize_schedule_timestamp(data)
+        except (TypeError, ValueError):
+            _LOGGER.warning("Ignoring invalid schedule time for slot %s: %r", slot_index + 1, data)
+            slot["time"].forcePublish()
+            return
+        slot["time"].value = normalized
+        self._rebuild_schedule()
+
+    def handle_set_schedule_temp(self, slot_index: int, data) -> None:
+        slot = self.schedule_slots[slot_index]
+        try:
+            temp = float(data)
+        except (TypeError, ValueError):
+            _LOGGER.warning("Ignoring invalid schedule temperature for slot %s: %r", slot_index + 1, data)
+            slot["temp"].forcePublish()
+            return
+        if temp < slot["temp"].min or temp > slot["temp"].max:
+            _LOGGER.warning(
+                "Ignoring out-of-range schedule temperature for slot %s: %s",
+                slot_index + 1,
+                temp,
+            )
+            slot["temp"].forcePublish()
+            return
+        slot["temp"].value = temp
+        self._rebuild_schedule()
+
+    def _rebuild_schedule(self) -> None:
+        schedule: list[dict] = []
+        for slot in self.schedule_slots:
+            timestamp = normalize_schedule_timestamp(slot["time"].value)
+            if not timestamp:
+                continue
+            schedule.append(
+                {
+                    "timestamp": timestamp,
+                    "temp": float(slot["temp"].value),
+                }
+            )
+        schedule.sort(key=lambda entry: entry["timestamp"])
+        self.schedule = schedule
+        self.schedulesummary.value = summarize_schedule(schedule)
+        self._update_current_schedule_state()
+        if self.mode == "auto":
+            self.checkSetSchedule(force=True)
+
+    def _update_current_schedule_state(self) -> None:
+        sched = self.fetchsched(time.strftime("%H:%M"))
+        self.currentschedule.value = format_schedule_row(sched) if sched else "none"
+        if sched is None:
+            self.currentsched = ""
+
     def fetchsched(self, currtimestamp: str) -> Optional[dict]:
         """
         Return the row whose 'timestamp' is the latest time <= currtimestamp.
@@ -104,21 +205,25 @@ class Controller:
         """
         curr: Optional[dict] = None
         for row in self.schedule:
-            if currtimestamp > row["timestamp"]:
+            if currtimestamp >= row["timestamp"]:
                 curr = row
         if curr is None and self.schedule:
             # wrap to last entry of previous day if no pick.
             curr = self.schedule[-1]
         return curr
 
-    def checkSetSchedule(self):
+    def checkSetSchedule(self, force: bool = False):
         currstamp = time.strftime("%H:%M")
         sched = self.fetchsched(currstamp)
+        self.currentschedule.value = format_schedule_row(sched) if sched else "none"
         if sched:
-            if sched["timestamp"] != self.currentsched:
+            if force or sched["timestamp"] != self.currentsched or self.pid.setpoint != sched["temp"]:
                 self.pid.setpoint = sched["temp"]
                 self.climate.value = sched["temp"]
+                self.desiredtemp.value = sched["temp"]
                 self.currentsched = sched["timestamp"]
+        else:
+            self.currentsched = ""
 
     def loop(self):
         apos: int | None = None
@@ -126,6 +231,7 @@ class Controller:
             self.client.connect(SHUTDOWN_EV)
             if SHUTDOWN_EV.is_set():
                 return
+            self._rebuild_schedule()
 
             lastupdate = time.monotonic()
             lastschedcheck = lastupdate

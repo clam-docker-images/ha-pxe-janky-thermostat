@@ -18,6 +18,7 @@ class MQTTEntity:
                  command_topic: str = "",
                  unit: Optional[str] = None,
                  device_class: Optional[str] = None,
+                 entity_category: Optional[str] = None,
                  retain: bool = True,
                  value: Optional[Union[str, float]] = None,
                  on_command: Optional[Callable[[Any], None]] = None
@@ -27,6 +28,7 @@ class MQTTEntity:
         self.name: str = name
         self.unit: Optional[str] = unit
         self.device_class: Optional[str] = device_class
+        self.entity_category: Optional[str] = entity_category
         self.retain: bool = retain
 
         self._value_lock: threading.Lock = threading.Lock()
@@ -151,6 +153,8 @@ class MQTTEntity:
             payload["unit_of_measurement"] = self.unit
         if self.device_class:
             payload["device_class"] = self.device_class
+        if self.entity_category:
+            payload["entity_category"] = self.entity_category
         return payload
 
     def on_command(self, payload: Union[str, float, dict]) -> None:
